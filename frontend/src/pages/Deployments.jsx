@@ -10,11 +10,12 @@ import {
   CheckCircle2,
   XCircle,
   FileCheck2,
+  MessageSquare,
 } from "lucide-react";
 import StatusLozenge from "../components/StatusLozenge";
 import KpiMetricCard from "../components/KpiMetricCard";
 import DeployWorkerModal from "../components/deployments/DeployWorkerModal";
-import { deploymentsApi } from "../services/api";
+import { deploymentsApi, notificationsApi } from "../services/api";
 import toast from "react-hot-toast";
 
 function Deployments() {
@@ -23,6 +24,7 @@ function Deployments() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [dispatchingId, setDispatchingId] = useState(null);
 
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -58,6 +60,27 @@ function Deployments() {
       loadDeployments();
     } catch (err) {
       toast.error(err.response?.data?.message || "Failed to update status");
+    }
+  };
+
+  const handleWhatsAppDispatch = async (deployment) => {
+    try {
+      setDispatchingId(deployment.deploymentId);
+      const res = await notificationsApi.dispatchWorker({
+        workerId: deployment.workerId,
+        siteName: deployment.siteName || "Client Site",
+        clientName: deployment.clientName,
+        reportingManager: "Site In-charge",
+        shiftTiming: "09:00 AM - 06:00 PM (General Shift)",
+      });
+      toast.success("Dispatch briefing generated and logged");
+      if (res.data?.waLink) {
+        window.open(res.data.waLink, "_blank", "noopener,noreferrer");
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Failed to dispatch WhatsApp briefing");
+    } finally {
+      setDispatchingId(null);
     }
   };
 
@@ -255,6 +278,16 @@ function Deployments() {
                     <td className="px-4 py-3 text-right">
                       {d.status === "Active" ? (
                         <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleWhatsAppDispatch(d)}
+                            disabled={dispatchingId === d.deploymentId}
+                            className="px-2 py-0.5 text-[10px] font-semibold text-[#0052CC] dark:text-[#579DFF] hover:bg-[#DEEBFF] dark:hover:bg-[#1E293B] rounded transition flex items-center gap-1 border border-[#B3D4FF] dark:border-[#263042]"
+                            title="Send WhatsApp Deployment Briefing & Digital Gate Pass"
+                          >
+                            <MessageSquare size={10} />
+                            <span>{dispatchingId === d.deploymentId ? "Sending..." : "Dispatch WA"}</span>
+                          </button>
                           <button
                             type="button"
                             onClick={() => handleUpdateStatus(d.deploymentId, "Completed")}

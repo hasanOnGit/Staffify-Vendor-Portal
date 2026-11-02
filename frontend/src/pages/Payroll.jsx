@@ -12,11 +12,17 @@ import {
   TrendingUp,
   X,
   FileSpreadsheet,
+  Landmark,
+  MessageSquare,
+  Send,
+  ExternalLink,
 } from "lucide-react";
 import KpiMetricCard from "../components/KpiMetricCard";
 import StatusLozenge from "../components/StatusLozenge";
 import PayslipModal from "../components/payroll/PayslipModal";
-import { payrollApi, musterRollApi } from "../services/api";
+import BankCmsExportModal from "../components/payroll/BankCmsExportModal";
+import NotificationLogModal from "../components/notifications/NotificationLogModal";
+import { payrollApi, musterRollApi, notificationsApi } from "../services/api";
 import toast from "react-hot-toast";
 
 function Payroll() {
@@ -29,11 +35,15 @@ function Payroll() {
   const [isRunModalOpen, setIsRunModalOpen] = useState(false);
   const [isPayslipOpen, setIsPayslipOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState(null);
+  const [isCmsModalOpen, setIsCmsModalOpen] = useState(false);
+  const [isLogsModalOpen, setIsLogsModalOpen] = useState(false);
+  const [isSendingWhatsApp, setIsSendingWhatsApp] = useState(false);
 
   // Available muster rolls to run payroll against
   const [approvedMusterRolls, setApprovedMusterRolls] = useState([]);
   const [selectedMusterRollId, setSelectedMusterRollId] = useState("");
   const [isRunning, setIsRunning] = useState(false);
+
 
   useEffect(() => {
     fetchPayrollData();
@@ -100,6 +110,40 @@ function Payroll() {
     setIsPayslipOpen(true);
   };
 
+  const handleBulkWhatsApp = async () => {
+    if (!selectedPayroll?.payrollId) return;
+    try {
+      setIsSendingWhatsApp(true);
+      const res = await notificationsApi.sendBulkPayslips({ payrollId: selectedPayroll.payrollId });
+      if (res.data?.success) {
+        toast.success(`Form XIX digital payslip alerts sent to ${res.data.data.totalDispatched} workers on WhatsApp!`);
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Failed to dispatch WhatsApp payslips.");
+    } finally {
+      setIsSendingWhatsApp(false);
+    }
+  };
+
+  const handleSingleWhatsApp = async (record) => {
+    try {
+      const res = await notificationsApi.sendPayslip({
+        payrollId: selectedPayroll.payrollId,
+        workerId: record.workerId,
+        month: selectedPayroll.month,
+        year: selectedPayroll.year,
+        netSalary: record.netSalary,
+        workerName: record.workerName,
+      });
+      if (res.data?.data?.waLink) {
+        window.open(res.data.data.waLink, "_blank");
+      }
+      toast.success(`Payslip advice prepared for ${record.workerName}!`);
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Failed to generate WhatsApp advice.");
+    }
+  };
+
   const isApproved = selectedPayroll?.status === "Approved" || selectedPayroll?.status === "Disbursed";
 
   return (
@@ -116,15 +160,26 @@ function Payroll() {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setIsRunModalOpen(true)}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded bg-[#0052CC] hover:bg-[#0747A6] text-white shadow-xs transition shrink-0 cursor-pointer"
-        >
-          <Plus size={14} />
-          <span>Calculate Salaries</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsLogsModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded bg-white dark:bg-[#151B26] border border-[#DFE1E6] dark:border-[#263042] text-[#172B4D] dark:text-[#F1F5F9] hover:bg-gray-50 dark:hover:bg-[#1E293B] shadow-2xs transition cursor-pointer"
+          >
+            <MessageSquare size={14} className="text-[#00875A]" />
+            <span>Dispatch Logs</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsRunModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded bg-[#0052CC] hover:bg-[#0747A6] text-white shadow-xs transition shrink-0 cursor-pointer"
+          >
+            <Plus size={14} />
+            <span>Calculate Salaries</span>
+          </button>
+        </div>
       </div>
+
 
       {/* Top KPI Metric Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
@@ -247,16 +302,37 @@ function Payroll() {
                   </p>
                 </div>
 
-                {!isApproved && (
+                <div className="flex items-center gap-2 flex-wrap">
                   <button
                     type="button"
-                    onClick={handleApprovePayroll}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded bg-[#00875A] hover:bg-[#006644] text-white shadow-xs transition cursor-pointer shrink-0"
+                    onClick={() => setIsCmsModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded bg-[#0052CC] hover:bg-[#0747A6] text-white shadow-xs transition cursor-pointer shrink-0"
                   >
-                    <CheckCircle2 size={13} />
-                    <span>Approve Payroll</span>
+                    <Landmark size={13} />
+                    <span>Bank CMS Payout</span>
                   </button>
-                )}
+
+                  <button
+                    type="button"
+                    onClick={handleBulkWhatsApp}
+                    disabled={isSendingWhatsApp}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded bg-[#00875A] hover:bg-[#006644] text-white shadow-xs transition cursor-pointer shrink-0 disabled:opacity-50"
+                  >
+                    <Send size={13} />
+                    <span>{isSendingWhatsApp ? "Sending..." : "Send WhatsApp Payslips"}</span>
+                  </button>
+
+                  {!isApproved && (
+                    <button
+                      type="button"
+                      onClick={handleApprovePayroll}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded bg-emerald-700 hover:bg-emerald-800 text-white shadow-xs transition cursor-pointer shrink-0"
+                    >
+                      <CheckCircle2 size={13} />
+                      <span>Approve Payroll</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Records Table */}
@@ -271,7 +347,7 @@ function Payroll() {
                       <th className="px-3.5 py-2.5 text-right">PF (12%)</th>
                       <th className="px-3.5 py-2.5 text-right">ESI / Tax</th>
                       <th className="px-3.5 py-2.5 text-right">Take-Home Pay</th>
-                      <th className="px-3.5 py-2.5 text-right">Payslip</th>
+                      <th className="px-3.5 py-2.5 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#DFE1E6] dark:divide-[#263042]">
@@ -303,18 +379,30 @@ function Payroll() {
                           Rs {r.netSalary?.toLocaleString()}
                         </td>
                         <td className="px-3.5 py-2.5 text-right">
-                          <button
-                            type="button"
-                            onClick={() => openPayslip(r)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-[#0052CC] dark:text-[#579DFF] hover:bg-[#DEEBFF] dark:hover:bg-[#1C2331] rounded transition cursor-pointer"
-                          >
-                            <Printer size={12} />
-                            <span>Payslip</span>
-                          </button>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleSingleWhatsApp(r)}
+                              title="Send Payslip on WhatsApp"
+                              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold text-[#00875A] dark:text-[#36B37E] hover:bg-[#E3FCEF] dark:hover:bg-[#1C2331] rounded transition cursor-pointer"
+                            >
+                              <MessageSquare size={12} />
+                              <span>WhatsApp</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openPayslip(r)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-[#0052CC] dark:text-[#579DFF] hover:bg-[#DEEBFF] dark:hover:bg-[#1C2331] rounded transition cursor-pointer"
+                            >
+                              <Printer size={12} />
+                              <span>Payslip</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
                   </tbody>
+
 
                   {/* Totals Footer */}
                   <tfoot>
@@ -428,8 +516,22 @@ function Payroll() {
         payroll={selectedPayroll}
         record={selectedRecord}
       />
+
+      {/* Bank CMS Bulk Payout Export Modal */}
+      <BankCmsExportModal
+        isOpen={isCmsModalOpen}
+        onClose={() => setIsCmsModalOpen(false)}
+        payroll={selectedPayroll}
+      />
+
+      {/* WhatsApp & SMS Notification Dispatch Logs Modal */}
+      <NotificationLogModal
+        isOpen={isLogsModalOpen}
+        onClose={() => setIsLogsModalOpen(false)}
+      />
     </div>
   );
 }
 
 export default Payroll;
+

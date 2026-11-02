@@ -81,6 +81,11 @@ export const payrollApi = {
   getById: (id) => API.get(`/payroll/${id}`),
   runPayroll: (data) => API.post("/payroll/run", data),
   approve: (id) => API.patch(`/payroll/${id}/approve`),
+  exportBankCms: (id, bank = "hdfc", format = "file") =>
+    API.get(`/payroll/${id}/export-bank-cms`, {
+      params: { bank, format },
+      responseType: format === "file" ? "blob" : "json",
+    }),
 };
 
 export const workersApi = {
@@ -116,7 +121,24 @@ export const complianceApi = {
   getFormD: (params) => API.get("/compliance/form-d", { params }),
   getEpfEcr: (params) => API.get("/compliance/epf-ecr", { params }),
   getEsicReturn: (params) => API.get("/compliance/esic-return", { params }),
+  exportEpfoEcr: (params) =>
+    API.get("/compliance/export/epfo-ecr", { params, responseType: "blob" }),
+  exportEsicReturn: (params) =>
+    API.get("/compliance/export/esic-return", { params, responseType: "blob" }),
+  getEpfoEcrMeta: (params) =>
+    API.get("/compliance/export/epfo-ecr", { params: { ...params, format: "json" } }),
+  getEsicReturnMeta: (params) =>
+    API.get("/compliance/export/esic-return", { params: { ...params, format: "json" } }),
 };
+
+export const notificationsApi = {
+  dispatchWorker: (data) => API.post("/notifications/dispatch-worker", data),
+  sendPayslip: (data) => API.post("/notifications/send-payslip", data),
+  sendBulkPayslips: (data) => API.post("/notifications/bulk-payslips", data),
+  loanAlert: (data) => API.post("/notifications/loan-alert", data),
+  getLogs: (params) => API.get("/notifications/logs", { params }),
+};
+
 
 export const shiftsApi = {
   getShifts: () => API.get("/shifts"),

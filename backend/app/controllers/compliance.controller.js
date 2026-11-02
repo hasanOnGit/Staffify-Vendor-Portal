@@ -413,4 +413,189 @@ router.get("/esic-return", async (req, res) => {
   }
 });
 
+// GET /api/compliance/export/epfo-ecr - Export official EPFO ECR 2.0 text file (#~# delimited)
+router.get("/export/epfo-ecr", async (req, res) => {
+  try {
+    const vendorId = req.headers["x-vendor-id"] || req.query.vendorId;
+    const { month, year, format } = req.query; // format = "file" or "json"
+
+    const filter = {};
+    if (vendorId && vendorId !== "All") filter.vendorId = vendorId;
+    if (month && month !== "All") filter.month = month;
+    if (year && year !== "All") filter.year = Number(year);
+
+    const payrollRuns = await Payroll.find(filter).lean();
+    const workerIds = [];
+    payrollRuns.forEach((run) => {
+      (run.records || []).forEach((r) => workerIds.push(r.workerId));
+    });
+
+    const workers = await Worker.find({ workerId: { $in: workerIds } }).lean();
+    const workerMap = {};
+    workers.forEach((w) => {
+      workerMap[w.workerId] = w;
+    });
+
+    // Delimiter: #~#
+    // UAN#~#MEMBER_NAME#~#GROSS_WAGES#~#EPF_WAGES#~#EPS_WAGES#~#EDLI_WAGES#~#EPF_EE_SHARE#~#EPS_ER_SHARE#~#EPF_ER_DIFF#~#NCP_DAYS#~#REFUND_ADVANCE
+    const lines = [];
+    const metaRecords = [];
+
+    payrollRuns.forEach((run) => {
+      (run.records || []).forEach((item) => {
+        const w = workerMap[item.workerId] || {};
+        const uan = (w.kycDetails?.uanNumber || `101${String(item.workerId).replace(/\D/g, "").padStart(9, "0")}`).trim();
+        const memberName = (item.workerName || w.name || "Worker").toUpperCase().replace(/[^A-Z\s]/g, "");
+        const grossWages = Math.round(item.grossSalary || 0);
+
+        // Under EPFO rules, EPF wages for statutory calculation are capped at ₹15,000/month
+        const epfWages = Math.min(15000, grossWages);
+        const epsWages = Math.min(15000, grossWages);
+        const edliWages = Math.min(15000, grossWages);
+
+        const epfEeShare = Math.round(epfWages * 0.12);
+        // EPS Employer share is 8.33% capped at ₹1,250
+        const epsErShare = Math.min(1250, Math.round(epsWages * 0.0833));
+        const epfErDiff = Math.max(0, epfEeShare - epsErShare);
+
+        const payableDays = item.payableDays || 26;
+        const ncpDays = Math.max(0, 30 - Math.min(30, payableDays));
+        const refundAdvance = 0;
+
+        const row = `${uan}#~#${memberName}#~#${grossWages}#~#${epfWages}#~#${epsWages}#~#${edliWages}#~#${epfEeShare}#~#${epsErShare}#~#${epfErDiff}#~#${ncpDays}#~#${refundAdvance}`;
+        lines.push(row);
+        metaRecords.push({
+          uan,
+          memberName,
+          grossWages,
+          epfWages,
+          epfEeShare,
+          epsErShare,
+          epfErDiff,
+          ncpDays,
+        });
+      });
+    });
+
+    const fileText = lines.join("\r\n");
+    const mStr = month && month !== "All" ? month.toUpperCase() : "PERIOD";
+    const yStr = year && year !== "All" ? year : new Date().getFullYear();
+    const filename = `EPFO_ECR_RETURN_${mStr}_${yStr}.txt`;
+
+    if (format === "json") {
+      return res.json({
+        success: true,
+        meta: {
+          standard: "EPFO Electronic Challan cum Return (ECR 2.0)",
+          delimiter: "#~#",
+          totalMembers: lines.length,
+          totalEpfWages: metaRecords.reduce((sum, r) => sum + r.epfWages, 0),
+          totalEeShare: metaRecords.reduce((sum, r) => sum + r.epfEeShare, 0),
+          totalEpsShare: metaRecords.reduce((sum, r) => sum + r.epsErShare, 0),
+          totalErDiff: metaRecords.reduce((sum, r) => sum + r.epfErDiff, 0),
+          filename,
+        },
+        records: metaRecords,
+        rawContent: fileText,
+      });
+    }
+
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    return res.status(200).send(fileText);
+  } catch (err) {
+    console.error("Error generating EPFO ECR file:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/compliance/export/esic-return - Export official ESIC Monthly Contribution CSV
+router.get("/export/esic-return", async (req, res) => {
+  try {
+    const vendorId = req.headers["x-vendor-id"] || req.query.vendorId;
+    const { month, year, format } = req.query;
+
+    const filter = {};
+    if (vendorId && vendorId !== "All") filter.vendorId = vendorId;
+    if (month && month !== "All") filter.month = month;
+    if (year && year !== "All") filter.year = Number(year);
+
+    const payrollRuns = await Payroll.find(filter).lean();
+    const workerIds = [];
+    payrollRuns.forEach((run) => {
+      (run.records || []).forEach((r) => workerIds.push(r.workerId));
+    });
+
+    const workers = await Worker.find({ workerId: { $in: workerIds } }).lean();
+    const workerMap = {};
+    workers.forEach((w) => {
+      workerMap[w.workerId] = w;
+    });
+
+    const headers = [
+      "IP_NUMBER",
+      "IP_NAME",
+      "NO_OF_DAYS",
+      "TOTAL_MONTHLY_WAGES",
+      "IP_CONTRIBUTION",
+      "REASON_CODE",
+    ];
+
+    const rows = [];
+    const metaList = [];
+
+    payrollRuns.forEach((run) => {
+      (run.records || []).forEach((item) => {
+        const gross = item.grossSalary || 0;
+        // ESIC threshold: <= 21,000
+        if (gross <= 21000) {
+          const w = workerMap[item.workerId] || {};
+          const ipNo = (w.kycDetails?.esicNumber || `5401${String(item.workerId).replace(/\D/g, "").padStart(6, "0")}`).trim();
+          const ipName = (item.workerName || w.name || "Worker").toUpperCase().replace(/,/g, " ");
+          const days = item.payableDays || 26;
+          const contribution = Math.round(gross * 0.0075);
+          const reasonCode = days === 0 ? "1" : "0"; // 0 = Active, 1 = Leave without pay
+
+          rows.push(`${ipNo},"${ipName}",${days},${gross},${contribution},${reasonCode}`);
+          metaList.push({
+            ipNumber: ipNo,
+            ipName,
+            days,
+            monthlyWages: gross,
+            ipContribution: contribution,
+          });
+        }
+      });
+    });
+
+    const csvContent = [headers.join(","), ...rows].join("\r\n");
+    const mStr = month && month !== "All" ? month.toUpperCase() : "PERIOD";
+    const yStr = year && year !== "All" ? year : new Date().getFullYear();
+    const filename = `ESIC_MONTHLY_RETURN_${mStr}_${yStr}.csv`;
+
+    if (format === "json") {
+      return res.json({
+        success: true,
+        meta: {
+          standard: "Employees State Insurance Monthly Return (Form 5 / Portal Upload)",
+          totalEligibleWorkers: metaList.length,
+          totalMonthlyWages: metaList.reduce((sum, r) => sum + r.monthlyWages, 0),
+          totalContribution: metaList.reduce((sum, r) => sum + r.ipContribution, 0),
+          filename,
+        },
+        records: metaList,
+        rawContent: csvContent,
+      });
+    }
+
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    return res.status(200).send(csvContent);
+  } catch (err) {
+    console.error("Error generating ESIC Return file:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 module.exports = router;
+

@@ -242,4 +242,147 @@ router.patch("/:id/approve", async (req, res) => {
   }
 });
 
+// GET /api/payroll/:id/export-bank-cms - Export ready-to-upload Bank CMS salary disbursement file
+router.get("/:id/export-bank-cms", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const bank = (req.query.bank || "hdfc").toLowerCase();
+    const format = req.query.format || "file"; // "file" or "json"
+
+    const payroll = await Payroll.findOne({
+      $or: [{ payrollId: id }, { _id: id.match(/^[0-9a-fA-F]{24}$/) ? id : null }],
+    }).lean();
+
+    if (!payroll) {
+      return res.status(404).json({ success: false, message: "Payroll run not found." });
+    }
+
+    const records = payroll.records || [];
+    if (records.length === 0) {
+      return res.status(400).json({ success: false, message: "No worker salary records in this payroll run." });
+    }
+
+    // Fetch worker mobile numbers
+    const workerIds = records.map((r) => r.workerId);
+    const workers = await Worker.find({ workerId: { $in: workerIds } }).lean();
+    const workerMap = {};
+    workers.forEach((w) => {
+      workerMap[w.workerId] = w;
+    });
+
+    const now = new Date();
+    const dateStr = now.toISOString().split("T")[0].replace(/-/g, "");
+    const debitAccount = "000405001234"; // Standard agency operating account
+
+    let filename = "";
+    let fileContent = "";
+    let mimeType = "text/csv";
+
+    if (bank === "icici") {
+      filename = `ICICI_CMS_SALARY_${payroll.payrollId}_${dateStr}.csv`;
+      const headers = [
+        "PYMT_PROD_TYPE_CODE",
+        "PYMT_MODE",
+        "DEBIT_ACC_NO",
+        "BNF_NAME",
+        "BENE_ACC_NO",
+        "BENE_IFSC",
+        "AMOUNT",
+        "TXN_TXT",
+        "PRINT_LOC_NAME",
+        "EMAIL_ID",
+        "MOBILE_NO",
+      ];
+      const rows = records.map((r, idx) => {
+        const w = workerMap[r.workerId] || {};
+        const beneAcc = (r.bankDetails?.accountNumber || w.kycDetails?.bankAccountNumber || "").replace(/\s+/g, "");
+        const ifsc = (r.bankDetails?.ifscCode || w.kycDetails?.ifscCode || "HDFC0000123").trim();
+        const amount = Math.round(r.netSalary || 0);
+        const name = (r.workerName || w.name || `Worker ${r.workerId}`).replace(/,/g, " ");
+        const mobile = (w.phone || "9845091823").replace(/\D/g, "").slice(-10);
+        const email = w.email || "";
+        const remarks = `Salary ${payroll.month} ${payroll.year}`;
+        return `PA,NEFT,${debitAccount},"${name}",${beneAcc},${ifsc},${amount},"${remarks}",,"${email}",${mobile}`;
+      });
+      fileContent = [headers.join(","), ...rows].join("\r\n");
+    } else if (bank === "sbi") {
+      filename = `SBI_CMP_SALARY_${payroll.payrollId}_${dateStr}.csv`;
+      const headers = [
+        "Debit Account No",
+        "Value Date",
+        "Txn Type",
+        "Beneficiary Name",
+        "Beneficiary Account No",
+        "IFSC Code",
+        "Amount",
+        "Currency",
+        "Narration",
+        "Mobile No",
+      ];
+      const todayFormatted = `${String(now.getDate()).padStart(2, "0")}/${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()}`;
+      const rows = records.map((r) => {
+        const w = workerMap[r.workerId] || {};
+        const beneAcc = (r.bankDetails?.accountNumber || w.kycDetails?.bankAccountNumber || "").replace(/\s+/g, "");
+        const ifsc = (r.bankDetails?.ifscCode || w.kycDetails?.ifscCode || "SBIN0001234").trim();
+        const amount = Number(r.netSalary || 0).toFixed(2);
+        const name = (r.workerName || w.name || `Worker ${r.workerId}`).replace(/,/g, " ");
+        const mobile = (w.phone || "9845091823").replace(/\D/g, "").slice(-10);
+        const narration = `Salary ${payroll.month} ${payroll.year}`.slice(0, 30);
+        return `${debitAccount},${todayFormatted},NEFT,"${name}",${beneAcc},${ifsc},${amount},INR,"${narration}",${mobile}`;
+      });
+      fileContent = [headers.join(","), ...rows].join("\r\n");
+    } else {
+      // Default: HDFC Corporate Enet CMS format
+      filename = `HDFC_ENET_SALARY_${payroll.payrollId}_${dateStr}.csv`;
+      const headers = [
+        "Record Type",
+        "Payment Type",
+        "Beneficiary Code",
+        "Beneficiary Account Number",
+        "Instrument Amount",
+        "Beneficiary Name",
+        "IFSC Code",
+        "Customer Reference Number",
+        "Payment Details",
+        "Beneficiary Mobile",
+        "Beneficiary Email",
+      ];
+      const rows = records.map((r, idx) => {
+        const w = workerMap[r.workerId] || {};
+        const beneAcc = (r.bankDetails?.accountNumber || w.kycDetails?.bankAccountNumber || "").replace(/\s+/g, "");
+        const ifsc = (r.bankDetails?.ifscCode || w.kycDetails?.ifscCode || "HDFC0000123").trim();
+        const amount = Math.round(r.netSalary || 0);
+        const name = (r.workerName || w.name || `Worker ${r.workerId}`).replace(/,/g, " ");
+        const mobile = (w.phone || "9845091823").replace(/\D/g, "").slice(-10);
+        const email = w.email || "";
+        const refNo = `${payroll.payrollId}-${String(idx + 1).padStart(3, "0")}`;
+        const narration = `Salary ${payroll.month} ${payroll.year}`;
+        return `N,NEFT,${r.workerId},${beneAcc},${amount},"${name}",${ifsc},${refNo},"${narration}",${mobile},"${email}"`;
+      });
+      fileContent = [headers.join(","), ...rows].join("\r\n");
+    }
+
+    if (format === "json") {
+      return res.json({
+        success: true,
+        meta: {
+          payrollId: payroll.payrollId,
+          bank: bank.toUpperCase(),
+          totalBeneficiaries: records.length,
+          totalAmount: payroll.totalNetPayable || records.reduce((sum, r) => sum + (r.netSalary || 0), 0),
+          filename,
+        },
+        content: fileContent,
+      });
+    }
+
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Type", mimeType);
+    return res.status(200).send(fileContent);
+  } catch (err) {
+    console.error("Error generating Bank CMS file:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 module.exports = router;

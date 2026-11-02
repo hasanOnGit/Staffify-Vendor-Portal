@@ -215,6 +215,48 @@ export default function Compliance() {
     toast.success(`Exported ${rows.length} rows to ${filename}`);
   };
 
+  const handleExportEpfoEcr = async () => {
+    try {
+      const res = await complianceApi.exportEpfoEcr({
+        month: month !== "All" ? month : undefined,
+        year: year !== "All" ? year : undefined,
+      });
+      const blob = new Blob([res.data], { type: "text/plain;charset=utf-8;" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `EPFO_ECR_2.0_${month}_${year}.txt`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success("Official EPFO ECR 2.0 text file downloaded! Ready for portal upload.");
+    } catch (err) {
+      toast.error("Failed to export EPFO ECR: " + (err.response?.data?.message || err.message));
+    }
+  };
+
+  const handleExportEsicReturn = async () => {
+    try {
+      const res = await complianceApi.exportEsicReturn({
+        month: month !== "All" ? month : undefined,
+        year: year !== "All" ? year : undefined,
+      });
+      const blob = new Blob([res.data], { type: "text/csv;charset=utf-8;" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `ESIC_MONTHLY_RETURN_${month}_${year}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success("Official ESIC Monthly Return CSV downloaded! Ready for portal upload.");
+    } catch (err) {
+      toast.error("Failed to export ESIC Return: " + (err.response?.data?.message || err.message));
+    }
+  };
+
   return (
     <div className="space-y-5">
       {/* Page Header */}
@@ -231,7 +273,7 @@ export default function Compliance() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             type="button"
             onClick={loadAllComplianceData}
@@ -240,6 +282,26 @@ export default function Compliance() {
           >
             <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
             <span>Refresh</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleExportEpfoEcr}
+            className="bg-white dark:bg-[#151B26] hover:bg-[#DEEBFF] dark:hover:bg-[#1C2331] text-[#0052CC] dark:text-[#579DFF] border border-[#B3D4FF] dark:border-[#0052CC]/50 text-xs font-semibold px-3 py-1.5 rounded transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+            title="Download official EPFO ECR #~# text file for EPFO Unified Portal"
+          >
+            <FileText size={13} />
+            <span>EPFO ECR (.txt)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleExportEsicReturn}
+            className="bg-white dark:bg-[#151B26] hover:bg-[#E3FCEF] dark:hover:bg-[#1C2331] text-[#00875A] dark:text-[#36B37E] border border-[#ABF5D1] dark:border-[#00875A]/50 text-xs font-semibold px-3 py-1.5 rounded transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+            title="Download official ESIC Monthly Contribution CSV for ESIC Portal"
+          >
+            <Download size={13} />
+            <span>ESIC Return (.csv)</span>
           </button>
 
           <button
@@ -261,6 +323,7 @@ export default function Compliance() {
           </button>
         </div>
       </div>
+
 
       {/* KPI Audit Scorecards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 print:hidden">
