@@ -4,6 +4,7 @@ const connectDB = async () => {
   try {
     const mongoUri =
       process.env.MONGO_URI ||
+      process.env.MONGODB_URI ||
       "mongodb://localhost:27017/staffify_erp";
     
     await mongoose.connect(mongoUri);
