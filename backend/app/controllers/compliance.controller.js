@@ -5,6 +5,7 @@ const MusterRoll = require("../models/musterRoll.model");
 const Worker = require("../models/worker.model");
 const Client = require("../models/client.model");
 const Vendor = require("../models/vendor.model");
+const ComplianceDocument = require("../models/complianceDocument.model");
 
 // GET /api/compliance/overview - Compliance Health Scorecard
 router.get("/overview", async (req, res) => {
@@ -593,6 +594,192 @@ router.get("/export/esic-return", async (req, res) => {
     return res.status(200).send(csvContent);
   } catch (err) {
     console.error("Error generating ESIC Return file:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ==================== STATUTORY DOCUMENT VAULT & EXPIRY SENTINEL ====================
+
+// GET /api/compliance/documents - List statutory licenses with dynamic expiry days
+router.get("/documents", async (req, res) => {
+  try {
+    const { status, type } = req.query;
+    const filter = {};
+    if (type && type !== "All") filter.documentType = type;
+
+    const rawDocs = await ComplianceDocument.find(filter).sort({ validUntil: 1 }).lean();
+    const now = new Date();
+
+    const docs = rawDocs.map((doc) => {
+      const validUntil = new Date(doc.validUntil);
+      const diffTime = validUntil.getTime() - now.getTime();
+      const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      let currentStatus = "Active";
+      if (daysRemaining <= 0) {
+        currentStatus = "Expired";
+      } else if (daysRemaining <= 30) {
+        currentStatus = "Expiring Soon";
+      }
+
+      return {
+        ...doc,
+        daysRemaining,
+        status: currentStatus,
+      };
+    });
+
+    const filtered = status && status !== "All" ? docs.filter((d) => d.status === status) : docs;
+
+    res.json({
+      success: true,
+      count: filtered.length,
+      data: filtered,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST /api/compliance/documents - Register new statutory license / policy
+router.post("/documents", async (req, res) => {
+  try {
+    const {
+      title,
+      documentType,
+      licenseNumber,
+      issuingAuthority = "Office of the Licensing Officer / State Labour Department",
+      state = "Karnataka",
+      clientName = "",
+      siteName = "",
+      maxWorkerCapacity = 50,
+      validFrom,
+      validUntil,
+      remarks = "",
+    } = req.body;
+
+    if (!title || !documentType || !licenseNumber || !validFrom || !validUntil) {
+      return res.status(400).json({
+        success: false,
+        message: "Title, document type, license number, valid from, and valid until dates are required.",
+      });
+    }
+
+    const documentId = `DOC-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
+    const now = new Date();
+    const expiryDate = new Date(validUntil);
+    const daysRemaining = Math.ceil((expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+    let status = "Active";
+    if (daysRemaining <= 0) {
+      status = "Expired";
+    } else if (daysRemaining <= 30) {
+      status = "Expiring Soon";
+    }
+
+    const doc = new ComplianceDocument({
+      documentId,
+      title: title.trim(),
+      documentType,
+      licenseNumber: licenseNumber.trim(),
+      issuingAuthority: issuingAuthority.trim(),
+      state: state.trim(),
+      clientName: clientName.trim(),
+      siteName: siteName.trim(),
+      maxWorkerCapacity: Number(maxWorkerCapacity) || 50,
+      validFrom: new Date(validFrom),
+      validUntil: expiryDate,
+      status,
+      remarks: remarks.trim(),
+    });
+
+    await doc.save();
+
+    res.status(201).json({
+      success: true,
+      message: `Document "${doc.title}" registered successfully in Statutory Vault.`,
+      data: doc,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// DELETE /api/compliance/documents/:id - Remove document
+router.delete("/documents/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const deleted = await ComplianceDocument.findOneAndDelete({
+      $or: [{ _id: id.match(/^[0-9a-fA-F]{24}$/) ? id : null }, { documentId: id }],
+    });
+
+    if (!deleted) {
+      return res.status(404).json({ success: false, message: "Document not found." });
+    }
+
+    res.json({ success: true, message: `Document ${deleted.documentId} removed.` });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/compliance/sentinel/alerts - Real-time countdown & risk alert feed
+router.get("/sentinel/alerts", async (req, res) => {
+  try {
+    const rawDocs = await ComplianceDocument.find({}).lean();
+    const now = new Date();
+
+    let total = rawDocs.length;
+    let active = 0;
+    let expiringSoon = 0;
+    let expired = 0;
+    const alerts = [];
+
+    rawDocs.forEach((d) => {
+      const validUntil = new Date(d.validUntil);
+      const days = Math.ceil((validUntil.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+      if (days <= 0) {
+        expired++;
+        alerts.push({
+          documentId: d.documentId,
+          title: d.title,
+          documentType: d.documentType,
+          licenseNumber: d.licenseNumber,
+          siteName: d.siteName,
+          severity: "CRITICAL",
+          daysRemaining: days,
+          message: `EXPIRED: ${d.title} (License #${d.licenseNumber}) expired ${Math.abs(days)} day(s) ago. Deployments may incur legal penalties.`,
+        });
+      } else if (days <= 30) {
+        expiringSoon++;
+        alerts.push({
+          documentId: d.documentId,
+          title: d.title,
+          documentType: d.documentType,
+          licenseNumber: d.licenseNumber,
+          siteName: d.siteName,
+          severity: "WARNING",
+          daysRemaining: days,
+          message: `EXPIRING SOON: ${d.title} expires in ${days} day(s). Initiate renewal with ${d.issuingAuthority}.`,
+        });
+      } else {
+        active++;
+      }
+    });
+
+    res.json({
+      success: true,
+      stats: {
+        total,
+        active,
+        expiringSoon,
+        expired,
+        complianceHealth: total > 0 ? Math.round(((total - expired) / total) * 100) : 100,
+      },
+      alerts,
+    });
+  } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 });

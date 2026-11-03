@@ -18,6 +18,8 @@ import Compliance from "./pages/Compliance";
 import Shifts from "./pages/Shifts";
 import Loans from "./pages/Loans";
 import Settlements from "./pages/Settlements";
+import Kiosk from "./pages/Kiosk";
+import ClientPortal from "./pages/ClientPortal";
 
 function App() {
   return (
@@ -63,6 +65,8 @@ function App() {
               <Route path="/deployments" element={<Deployments />} />
               <Route path="/muster-roll" element={<MusterRoll />} />
               <Route path="/shifts" element={<Shifts />} />
+              <Route path="/kiosk" element={<Kiosk />} />
+              <Route path="/client-portal" element={<ClientPortal />} />
               <Route path="/payroll" element={<Payroll />} />
               <Route path="/vendor-invoices" element={<VendorInvoices />} />
               <Route path="/compliance" element={<Compliance />} />

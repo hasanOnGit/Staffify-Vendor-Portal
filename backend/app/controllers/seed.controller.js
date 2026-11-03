@@ -10,6 +10,8 @@ const Worker = require("../models/worker.model");
 const MusterRoll = require("../models/musterRoll.model");
 const Payroll = require("../models/payroll.model");
 const Requisition = require("../models/requisition.model");
+const ComplianceDocument = require("../models/complianceDocument.model");
+const KioskPunch = require("../models/kioskPunch.model");
 
 const seedData = async (req, res) => {
   try {
@@ -24,6 +26,8 @@ const seedData = async (req, res) => {
     await MusterRoll.deleteMany({});
     await Payroll.deleteMany({});
     await Requisition.deleteMany({});
+    await ComplianceDocument.deleteMany({});
+    await KioskPunch.deleteMany({});
 
     // 1. Create Vendors
     const vendors = await Vendor.insertMany([
@@ -1102,6 +1106,141 @@ const seedData = async (req, res) => {
       },
     ]);
 
+    // 11. Create Statutory Compliance Documents (Vault & Expiry Sentinel)
+    const complianceDocs = await ComplianceDocument.insertMany([
+      {
+        documentId: "DOC-8001",
+        title: "CLRA Contractor License — Karnataka State (Form VI-B)",
+        documentType: "Contractor Labor License (Form VI-B)",
+        licenseNumber: "KA-BLR-CLRA-2024-8842",
+        issuingAuthority: "Office of the Licensing Officer, Bengaluru Division",
+        state: "Karnataka",
+        clientName: "Tata Projects Limited",
+        siteName: "Tata Projects Site A - Whitefield Tech Campus",
+        maxWorkerCapacity: 120,
+        validFrom: new Date("2024-01-01"),
+        validUntil: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000), // Active
+        status: "Active",
+        remarks: "Annual renewal approved under Rule 29(1).",
+      },
+      {
+        documentId: "DOC-8002",
+        title: "Workers' Compensation Comprehensive Insurance Policy",
+        documentType: "Workers Compensation Insurance Policy",
+        licenseNumber: "HDFC-ERGO-WC-992144",
+        issuingAuthority: "HDFC ERGO General Insurance Co Ltd",
+        state: "Karnataka",
+        clientName: "Tata Projects Limited",
+        siteName: "Tata Projects Site A - Whitefield Tech Campus",
+        maxWorkerCapacity: 150,
+        validFrom: new Date("2024-04-01"),
+        validUntil: new Date(Date.now() + 12 * 24 * 60 * 60 * 1000), // Expiring in 12 days!
+        status: "Expiring Soon",
+        remarks: "Premium renewal quote received from underwriter. Awaiting payment authorization.",
+      },
+      {
+        documentId: "DOC-8003",
+        title: "Principal Employer Form V Certificate of Registration",
+        documentType: "Principal Employer Registration (Form V)",
+        licenseNumber: "KA-PE-REG-2023-4110",
+        issuingAuthority: "Commissioner of Labour, Government of Karnataka",
+        state: "Karnataka",
+        clientName: "Tata Projects Limited",
+        siteName: "Tata Projects Site A - Whitefield Tech Campus",
+        maxWorkerCapacity: 200,
+        validFrom: new Date("2023-01-01"),
+        validUntil: new Date(Date.now() + 300 * 24 * 60 * 60 * 1000),
+        status: "Active",
+        remarks: "Valid for entire project construction phase.",
+      },
+      {
+        documentId: "DOC-8004",
+        title: "CLRA Inter-State Migrant Workmen License — Maharashtra",
+        documentType: "Inter-State Migrant Workmen License",
+        licenseNumber: "MH-PUN-ISMW-2023-1092",
+        issuingAuthority: "Labour Commissioner, Pune Circle",
+        state: "Maharashtra",
+        clientName: "L&T Heavy Engineering",
+        siteName: "L&T Heavy Engineering Yard - Pune",
+        maxWorkerCapacity: 80,
+        validFrom: new Date("2023-06-01"),
+        validUntil: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), // Expired 5 days ago!
+        status: "Expired",
+        remarks: "Lapsed. Immediate renewal submission mandatory before new deployments.",
+      },
+      {
+        documentId: "DOC-8005",
+        title: "Employees' Provident Fund Establishment Code Letter",
+        documentType: "EPF Establishment Code Certificate",
+        licenseNumber: "KN-BLR-0099412-000",
+        issuingAuthority: "EPFO Regional Office, Bengaluru North",
+        state: "Karnataka",
+        maxWorkerCapacity: 500,
+        validFrom: new Date("2020-01-01"),
+        validUntil: new Date(Date.now() + 1000 * 24 * 60 * 60 * 1000),
+        status: "Active",
+        remarks: "Permanent Establishment Code.",
+      },
+    ]);
+
+    // 12. Create Sample Kiosk Punches
+    const samplePunches = await KioskPunch.insertMany([
+      {
+        punchId: "PCH-7001",
+        workerId: "WRK-8001",
+        workerName: "Ramesh Kumar",
+        trade: "Electrician",
+        siteId: "SIT-401",
+        siteName: "Tata Projects Site A - Whitefield Tech Campus",
+        clientId: "CLI-201",
+        clientName: "Tata Projects Limited",
+        type: "IN",
+        timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000),
+        coordinates: { latitude: 12.9716, longitude: 77.5946 },
+        distanceMeters: 45,
+        verifiedByGeofence: true,
+        deviceType: "Mobile Kiosk PWA",
+        status: "Verified",
+        notes: "On-time arrival for morning shift.",
+      },
+      {
+        punchId: "PCH-7002",
+        workerId: "WRK-8002",
+        workerName: "Sunil Verma",
+        trade: "Rigger",
+        siteId: "SIT-401",
+        siteName: "Tata Projects Site A - Whitefield Tech Campus",
+        clientId: "CLI-201",
+        clientName: "Tata Projects Limited",
+        type: "IN",
+        timestamp: new Date(Date.now() - 3 * 60 * 60 * 1000),
+        coordinates: { latitude: 12.9718, longitude: 77.5944 },
+        distanceMeters: 62,
+        verifiedByGeofence: true,
+        deviceType: "Mobile Kiosk PWA",
+        status: "Verified",
+        notes: "Gate pass scanned via supervisor camera.",
+      },
+      {
+        punchId: "PCH-7003",
+        workerId: "WRK-8004",
+        workerName: "Santosh Yadav",
+        trade: "Fitter",
+        siteId: "SIT-401",
+        siteName: "Tata Projects Site A - Whitefield Tech Campus",
+        clientId: "CLI-201",
+        clientName: "Tata Projects Limited",
+        type: "IN",
+        timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000),
+        coordinates: { latitude: 12.976, longitude: 77.599 },
+        distanceMeters: 680,
+        verifiedByGeofence: false,
+        deviceType: "Mobile Kiosk PWA",
+        status: "Geofence Breach",
+        notes: "Detected 680m away from site gate perimeter.",
+      },
+    ]);
+
     if (res) {
       return res.json({
         success: true,
@@ -1117,6 +1256,8 @@ const seedData = async (req, res) => {
           musterRolls: musterRolls.length,
           payrolls: payrolls.length,
           requisitions: requisitions.length,
+          complianceDocuments: complianceDocs.length,
+          kioskPunches: samplePunches.length,
         },
       });
     }

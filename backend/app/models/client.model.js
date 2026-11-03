@@ -26,6 +26,11 @@ const siteSchema = new mongoose.Schema(
       phone: { type: String, default: "" },
       email: { type: String, default: "" },
     },
+    geofence: {
+      latitude: { type: Number, default: 12.9716 },
+      longitude: { type: Number, default: 77.5946 },
+      radiusMeters: { type: Number, default: 200 },
+    },
     isActive: {
       type: Boolean,
       default: true,

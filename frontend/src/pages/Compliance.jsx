@@ -13,6 +13,12 @@ import {
   DollarSign,
   Users,
   Award,
+  Plus,
+  Trash2,
+  AlertCircle,
+  X,
+  FolderLock,
+  BellRing,
 } from "lucide-react";
 import KpiMetricCard from "../components/KpiMetricCard";
 import StatusLozenge from "../components/StatusLozenge";
@@ -28,6 +34,27 @@ export default function Compliance() {
   // Filters
   const [month, setMonth] = useState("March");
   const [year, setYear] = useState("2026");
+
+  // Document Vault states
+  const [documents, setDocuments] = useState([]);
+  const [sentinelStats, setSentinelStats] = useState({ total: 0, active: 0, expiringSoon: 0, expired: 0, complianceHealth: 100 });
+  const [sentinelAlerts, setSentinelAlerts] = useState([]);
+  const [vaultFilter, setVaultFilter] = useState("All");
+  const [isAddDocModalOpen, setIsAddDocModalOpen] = useState(false);
+  const [savingDoc, setSavingDoc] = useState(false);
+  const [newDocForm, setNewDocForm] = useState({
+    title: "",
+    documentType: "Contractor Labor License (Form VI-B)",
+    licenseNumber: "",
+    issuingAuthority: "Office of the Licensing Officer / State Labour Department",
+    state: "Karnataka",
+    clientName: "",
+    siteName: "",
+    maxWorkerCapacity: 100,
+    validFrom: new Date().toISOString().split("T")[0],
+    validUntil: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+    remarks: "",
+  });
 
   // Data states
   const [overview, setOverview] = useState({
@@ -56,12 +83,14 @@ export default function Compliance() {
         year: year !== "All" ? year : undefined,
       };
 
-      const [ovRes, fbRes, fdRes, epfRes, esicRes] = await Promise.all([
+      const [ovRes, fbRes, fdRes, epfRes, esicRes, docRes, alertRes] = await Promise.all([
         complianceApi.getOverview(params),
         complianceApi.getFormB(params),
         complianceApi.getFormD(params),
         complianceApi.getEpfEcr(params),
         complianceApi.getEsicReturn(params),
+        complianceApi.getDocuments({ status: vaultFilter !== "All" ? vaultFilter : undefined }),
+        complianceApi.getSentinelAlerts(),
       ]);
 
       if (ovRes.data?.data) setOverview(ovRes.data.data);
@@ -69,10 +98,41 @@ export default function Compliance() {
       if (fdRes.data) setFormDData(fdRes.data);
       if (epfRes.data) setEpfData(epfRes.data);
       if (esicRes.data) setEsicData(esicRes.data);
+      if (docRes.data?.data) setDocuments(docRes.data.data);
+      if (alertRes.data?.stats) {
+        setSentinelStats(alertRes.data.stats);
+        setSentinelAlerts(alertRes.data.alerts || []);
+      }
     } catch (err) {
       toast.error("Failed to load compliance records: " + (err.response?.data?.message || err.message));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRegisterDocument = async (e) => {
+    e.preventDefault();
+    try {
+      setSavingDoc(true);
+      const res = await complianceApi.registerDocument(newDocForm);
+      toast.success(res.data.message || "Document registered in vault!");
+      setIsAddDocModalOpen(false);
+      loadAllComplianceData();
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Failed to register document.");
+    } finally {
+      setSavingDoc(false);
+    }
+  };
+
+  const handleDeleteDocument = async (id) => {
+    if (!window.confirm("Are you sure you want to remove this statutory document?")) return;
+    try {
+      await complianceApi.deleteDocument(id);
+      toast.success("Document removed from vault.");
+      loadAllComplianceData();
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Failed to delete document.");
     }
   };
 
@@ -403,6 +463,28 @@ export default function Compliance() {
             }`}
           >
             ESIC Monthly Return
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("vault")}
+            className={`text-xs font-semibold px-3 py-1.5 rounded transition cursor-pointer flex items-center gap-1.5 ${
+              activeTab === "vault"
+                ? "bg-[#0052CC] text-white shadow-xs"
+                : "text-[#6B778C] dark:text-[#94A3B8] hover:bg-[#EBECF0] dark:hover:bg-[#151B26]"
+            }`}
+          >
+            <FolderLock size={13} />
+            <span>Document Vault &amp; Expiry Sentinel</span>
+            {sentinelStats?.expired > 0 ? (
+              <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-[#FFEBE6] text-[#DE350B]">
+                {sentinelStats.expired}
+              </span>
+            ) : sentinelStats?.expiringSoon > 0 ? (
+              <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-[#FFF0B3] text-[#B9770E]">
+                {sentinelStats.expiringSoon}
+              </span>
+            ) : null}
           </button>
         </div>
 
@@ -852,6 +934,342 @@ export default function Compliance() {
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== DOCUMENT VAULT & EXPIRY SENTINEL ==================== */}
+      {activeTab === "vault" && (
+        <div className="space-y-4">
+          {/* Sentinel Risk Alert Feed Banner */}
+          {sentinelAlerts.length > 0 && (
+            <div className="space-y-2">
+              {sentinelAlerts.map((alert, idx) => (
+                <div
+                  key={idx}
+                  className={`p-3 rounded-lg border flex items-center justify-between text-xs ${
+                    alert.severity === "CRITICAL"
+                      ? "bg-[#FFEBE6] dark:bg-rose-950/40 border-[#FFBDAD] dark:border-rose-900 text-[#DE350B] dark:text-rose-200"
+                      : "bg-[#FFF0B3] dark:bg-amber-950/40 border-[#FFE380] dark:border-amber-900 text-[#B9770E] dark:text-amber-200"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <BellRing size={16} className="shrink-0" />
+                    <div>
+                      <span className="font-bold uppercase tracking-wider mr-1.5 text-[10px] px-1.5 py-0.2 rounded bg-white/60 dark:bg-black/30">
+                        {alert.severity}
+                      </span>
+                      <span>{alert.message}</span>
+                    </div>
+                  </div>
+                  <span className="font-mono text-[11px] font-bold shrink-0">
+                    {alert.daysRemaining <= 0 ? `Lapsed ${Math.abs(alert.daysRemaining)}d ago` : `Expires in ${alert.daysRemaining}d`}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Vault Top Action Bar */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white dark:bg-[#0F131C] p-3 border border-[#DFE1E6] dark:border-[#263042] rounded-lg">
+            {/* Status Filter */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[11px] font-semibold text-[#6B778C] dark:text-neutral-400">
+                Filter Licenses:
+              </span>
+              {["All", "Active", "Expiring Soon", "Expired"].map((st) => (
+                <button
+                  key={st}
+                  type="button"
+                  onClick={() => {
+                    setVaultFilter(st);
+                    complianceApi.getDocuments({ status: st !== "All" ? st : undefined }).then((res) => {
+                      if (res.data?.data) setDocuments(res.data.data);
+                    });
+                  }}
+                  className={`text-xs px-2.5 py-1 rounded transition cursor-pointer font-medium ${
+                    vaultFilter === st
+                      ? "bg-[#0052CC] text-white shadow-2xs font-semibold"
+                      : "text-[#42526E] dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-[#1C2331]"
+                  }`}
+                >
+                  {st}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsAddDocModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded bg-[#0052CC] hover:bg-[#0747A6] text-white shadow-xs transition cursor-pointer shrink-0"
+            >
+              <Plus size={14} />
+              <span>Register Statutory Document</span>
+            </button>
+          </div>
+
+          {/* Documents Table */}
+          <div className="bg-white dark:bg-[#0F131C] border border-[#DFE1E6] dark:border-[#263042] rounded-lg shadow-xs overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-[#FAFBFC] dark:bg-[#151B26] border-b border-[#DFE1E6] dark:border-[#263042] text-[#6B778C] dark:text-neutral-400 font-semibold uppercase text-[10px]">
+                    <th className="py-2.5 px-3">Document Title &amp; Type</th>
+                    <th className="py-2.5 px-3">License / Policy #</th>
+                    <th className="py-2.5 px-3">Linked Client / Site</th>
+                    <th className="py-2.5 px-3">Issuing Authority</th>
+                    <th className="py-2.5 px-3 text-center">Capacity</th>
+                    <th className="py-2.5 px-3 text-center">Valid Until</th>
+                    <th className="py-2.5 px-3 text-center">Sentinel Countdown</th>
+                    <th className="py-2.5 px-3 text-center">Status</th>
+                    <th className="py-2.5 px-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#EBECF0] dark:divide-[#263042]">
+                  {documents.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="py-8 text-center text-xs text-[#6B778C] dark:text-neutral-400">
+                        No statutory documents found matching filter.
+                      </td>
+                    </tr>
+                  ) : (
+                    documents.map((doc) => {
+                      const isExpired = doc.status === "Expired";
+                      const isExpiring = doc.status === "Expiring Soon";
+                      return (
+                        <tr
+                          key={doc.documentId}
+                          className="hover:bg-gray-50 dark:hover:bg-[#151B26]/60 transition"
+                        >
+                          <td className="py-3 px-3">
+                            <div className="font-bold text-[#172B4D] dark:text-white">{doc.title}</div>
+                            <div className="text-[10px] text-[#0052CC] dark:text-[#579DFF] font-medium">
+                              {doc.documentType}
+                            </div>
+                          </td>
+                          <td className="py-3 px-3 font-mono font-bold text-[#172B4D] dark:text-neutral-200">
+                            {doc.licenseNumber}
+                          </td>
+                          <td className="py-3 px-3 text-[#42526E] dark:text-neutral-300">
+                            <div>{doc.clientName || "General State"}</div>
+                            <div className="text-[10px] text-[#6B778C]">{doc.siteName || doc.state}</div>
+                          </td>
+                          <td className="py-3 px-3 text-[#6B778C] dark:text-neutral-400 max-w-[160px] truncate">
+                            {doc.issuingAuthority}
+                          </td>
+                          <td className="py-3 px-3 text-center font-bold">
+                            {doc.maxWorkerCapacity} Workers
+                          </td>
+                          <td className="py-3 px-3 text-center font-mono">
+                            {new Date(doc.validUntil).toLocaleDateString()}
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            <span
+                              className={`font-mono text-[10px] font-bold px-2 py-0.5 rounded ${
+                                isExpired
+                                  ? "bg-[#FFEBE6] text-[#DE350B]"
+                                  : isExpiring
+                                  ? "bg-[#FFF0B3] text-[#B9770E]"
+                                  : "bg-[#E3FCEF] text-[#006644]"
+                              }`}
+                            >
+                              {doc.daysRemaining <= 0
+                                ? `Lapsed ${Math.abs(doc.daysRemaining)}d`
+                                : `${doc.daysRemaining} days left`}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            <StatusLozenge status={doc.status} size="xs" />
+                          </td>
+                          <td className="py-3 px-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteDocument(doc.documentId)}
+                              className="text-[#6B778C] hover:text-[#DE350B] p-1 rounded transition"
+                              title="Delete document"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Register Statutory Document Modal */}
+      {isAddDocModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="bg-white dark:bg-[#0F131C] border border-[#DFE1E6] dark:border-[#263042] rounded-lg max-w-lg w-full p-5 shadow-xl animate-in zoom-in-95 duration-150 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[#DFE1E6] dark:border-[#263042]">
+              <div className="flex items-center gap-2">
+                <FolderLock size={18} className="text-[#0052CC] dark:text-[#579DFF]" />
+                <h3 className="text-sm font-bold text-[#172B4D] dark:text-white">
+                  Register Statutory License / Insurance Policy
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddDocModalOpen(false)}
+                className="text-[#6B778C] hover:text-[#172B4D] dark:hover:text-white"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleRegisterDocument} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-[#172B4D] dark:text-neutral-300 mb-1">
+                  Document Title
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Karnataka State Contractor License Form VI-B"
+                  value={newDocForm.title}
+                  onChange={(e) => setNewDocForm({ ...newDocForm, title: e.target.value })}
+                  className="w-full bg-[#FAFBFC] dark:bg-[#151B26] border border-[#DFE1E6] dark:border-[#263042] rounded px-3 py-2 text-xs font-medium focus:border-[#0052CC] focus:outline-hidden"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-[#172B4D] dark:text-neutral-300 mb-1">
+                    Document Category
+                  </label>
+                  <select
+                    value={newDocForm.documentType}
+                    onChange={(e) => setNewDocForm({ ...newDocForm, documentType: e.target.value })}
+                    className="w-full bg-[#FAFBFC] dark:bg-[#151B26] border border-[#DFE1E6] dark:border-[#263042] rounded px-3 py-2 text-xs font-medium focus:border-[#0052CC] focus:outline-hidden"
+                  >
+                    <option value="Contractor Labor License (Form VI-B)">CLRA License (Form VI-B)</option>
+                    <option value="Workers Compensation Insurance Policy">WC Insurance Policy</option>
+                    <option value="Principal Employer Registration (Form V)">PE Registration (Form V)</option>
+                    <option value="EPF Establishment Code Certificate">EPF Establishment Code</option>
+                    <option value="ESIC Registration Letter">ESIC Code Letter</option>
+                    <option value="Inter-State Migrant Workmen License">ISMW License</option>
+                    <option value="Factory / State Trade License">State Trade License</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-[#172B4D] dark:text-neutral-300 mb-1">
+                    License / Policy #
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. KA-BLR-CLRA-2024-8842"
+                    value={newDocForm.licenseNumber}
+                    onChange={(e) => setNewDocForm({ ...newDocForm, licenseNumber: e.target.value })}
+                    className="w-full bg-[#FAFBFC] dark:bg-[#151B26] border border-[#DFE1E6] dark:border-[#263042] rounded px-3 py-2 text-xs font-mono font-bold focus:border-[#0052CC] focus:outline-hidden"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-[#172B4D] dark:text-neutral-300 mb-1">
+                    Issuing Authority
+                  </label>
+                  <input
+                    type="text"
+                    value={newDocForm.issuingAuthority}
+                    onChange={(e) => setNewDocForm({ ...newDocForm, issuingAuthority: e.target.value })}
+                    className="w-full bg-[#FAFBFC] dark:bg-[#151B26] border border-[#DFE1E6] dark:border-[#263042] rounded px-3 py-2 text-xs font-medium focus:border-[#0052CC] focus:outline-hidden"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-[#172B4D] dark:text-neutral-300 mb-1">
+                    State / Jurisdiction
+                  </label>
+                  <input
+                    type="text"
+                    value={newDocForm.state}
+                    onChange={(e) => setNewDocForm({ ...newDocForm, state: e.target.value })}
+                    className="w-full bg-[#FAFBFC] dark:bg-[#151B26] border border-[#DFE1E6] dark:border-[#263042] rounded px-3 py-2 text-xs font-medium focus:border-[#0052CC] focus:outline-hidden"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-[#172B4D] dark:text-neutral-300 mb-1">
+                    Valid From
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={newDocForm.validFrom}
+                    onChange={(e) => setNewDocForm({ ...newDocForm, validFrom: e.target.value })}
+                    className="w-full bg-[#FAFBFC] dark:bg-[#151B26] border border-[#DFE1E6] dark:border-[#263042] rounded px-3 py-2 text-xs font-mono focus:border-[#0052CC] focus:outline-hidden"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-[#172B4D] dark:text-neutral-300 mb-1">
+                    Valid Until (Expiry Date)
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={newDocForm.validUntil}
+                    onChange={(e) => setNewDocForm({ ...newDocForm, validUntil: e.target.value })}
+                    className="w-full bg-[#FAFBFC] dark:bg-[#151B26] border border-[#DFE1E6] dark:border-[#263042] rounded px-3 py-2 text-xs font-mono font-bold text-[#0052CC] focus:border-[#0052CC] focus:outline-hidden"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-[#172B4D] dark:text-neutral-300 mb-1">
+                    Client Name (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Tata Projects Limited"
+                    value={newDocForm.clientName}
+                    onChange={(e) => setNewDocForm({ ...newDocForm, clientName: e.target.value })}
+                    className="w-full bg-[#FAFBFC] dark:bg-[#151B26] border border-[#DFE1E6] dark:border-[#263042] rounded px-3 py-2 text-xs font-medium focus:border-[#0052CC] focus:outline-hidden"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-[#172B4D] dark:text-neutral-300 mb-1">
+                    Max Worker Capacity
+                  </label>
+                  <input
+                    type="number"
+                    value={newDocForm.maxWorkerCapacity}
+                    onChange={(e) => setNewDocForm({ ...newDocForm, maxWorkerCapacity: e.target.value })}
+                    className="w-full bg-[#FAFBFC] dark:bg-[#151B26] border border-[#DFE1E6] dark:border-[#263042] rounded px-3 py-2 text-xs font-mono focus:border-[#0052CC] focus:outline-hidden"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#DFE1E6] dark:border-[#263042]">
+                <button
+                  type="button"
+                  onClick={() => setIsAddDocModalOpen(false)}
+                  className="px-3 py-1.5 rounded border border-[#DFE1E6] dark:border-[#263042] text-[#42526E] dark:text-neutral-300 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingDoc}
+                  className="px-4 py-1.5 rounded bg-[#0052CC] hover:bg-[#0747A6] text-white font-bold shadow-xs cursor-pointer disabled:opacity-50"
+                >
+                  {savingDoc ? "Registering..." : "Save to Vault"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

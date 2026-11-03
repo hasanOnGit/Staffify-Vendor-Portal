@@ -90,6 +90,14 @@ const musterRollSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    clientSignoff: {
+      isSigned: { type: Boolean, default: false },
+      signedBy: { type: String, default: "" },
+      designation: { type: String, default: "" },
+      signedAt: { type: Date, default: null },
+      comments: { type: String, default: "" },
+      digitalSignatureHash: { type: String, default: "" },
+    },
   },
   {
     timestamps: true,

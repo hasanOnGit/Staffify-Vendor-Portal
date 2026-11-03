@@ -18,6 +18,8 @@ import {
   UserPlus,
   Banknote,
   CreditCard,
+  QrCode,
+  Radio,
 } from "lucide-react";
 import { seedApi } from "../services/api";
 import toast from "react-hot-toast";
@@ -62,6 +64,11 @@ const navSections = [
         icon: Clock,
       },
       {
+        path: "/kiosk",
+        label: "Site Punch Kiosk (GPS)",
+        icon: QrCode,
+      },
+      {
         path: "/settlements",
         label: "Exits & Final Payouts",
         icon: LogOut,
@@ -71,6 +78,11 @@ const navSections = [
   {
     title: "Clients & Partners",
     links: [
+      {
+        path: "/client-portal",
+        label: "Client Sign-off Portal",
+        icon: UserCheck,
+      },
       {
         path: "/clients",
         label: "Clients & Sites",

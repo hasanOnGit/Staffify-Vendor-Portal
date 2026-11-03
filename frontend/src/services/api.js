@@ -129,6 +129,25 @@ export const complianceApi = {
     API.get("/compliance/export/epfo-ecr", { params: { ...params, format: "json" } }),
   getEsicReturnMeta: (params) =>
     API.get("/compliance/export/esic-return", { params: { ...params, format: "json" } }),
+  getDocuments: (params) => API.get("/compliance/documents", { params }),
+  registerDocument: (data) => API.post("/compliance/documents", data),
+  deleteDocument: (id) => API.delete(`/compliance/documents/${id}`),
+  getSentinelAlerts: () => API.get("/compliance/sentinel/alerts"),
+};
+
+export const kioskApi = {
+  getSites: () => API.get("/kiosk/sites"),
+  getWorker: (workerId) => API.get(`/kiosk/worker/${workerId}`),
+  punch: (data) => API.post("/kiosk/punch", data),
+  getRecentPunches: (params) => API.get("/kiosk/recent-punches", { params }),
+};
+
+export const clientPortalApi = {
+  getClients: () => API.get("/client-portal/clients"),
+  getSummary: (params) => API.get("/client-portal/summary", { params }),
+  getMusterRolls: (params) => API.get("/client-portal/muster-rolls", { params }),
+  signOffMusterRoll: (id, data) => API.post(`/client-portal/muster-rolls/${id}/sign-off`, data),
+  getCompliancePack: (params) => API.get("/client-portal/compliance-pack", { params }),
 };
 
 export const notificationsApi = {

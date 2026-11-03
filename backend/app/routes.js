@@ -14,12 +14,16 @@ const settlementRoutes = require("./controllers/settlement.controller");
 const aiRoutes = require("./controllers/ai.controller");
 const dashboardRoutes = require("./controllers/dashboard.controller");
 const notificationRoutes = require("./controllers/notification.controller");
+const kioskRoutes = require("./controllers/kiosk.controller");
+const clientPortalRoutes = require("./controllers/clientPortal.controller");
 const { router: seedRoutes } = require("./controllers/seed.controller");
 
 module.exports = function (app) {
   app.use("/api/dashboard", dashboardRoutes);
   app.use("/api/ai", aiRoutes);
   app.use("/api/notifications", notificationRoutes);
+  app.use("/api/kiosk", kioskRoutes);
+  app.use("/api/client-portal", clientPortalRoutes);
   app.use("/api/vendors", vendorRoutes);
   app.use("/api/clients", clientRoutes);
   app.use("/api/commercials", commercialRoutes);
